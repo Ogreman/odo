@@ -132,6 +132,8 @@ def list(config, name):
 
     items = config.read(name)
     if items is not None:
+        if not items:
+            click.echo("List empty.")
         for item in items:
             click.echo(">> {0}".format(item.rstrip()))
         if config.verbose:
@@ -267,3 +269,36 @@ def remove(config, item, name):
                 click.echo("Removed.")
     elif config.verbose:
         click.echo("Item not in list.")
+
+
+@cli.command()
+@click.argument('name')
+@click.argument('items', nargs=-1)
+@click.option('--avoid-duplicates', is_flag=True)
+@pass_config
+def create(config, name, items, avoid_duplicates):
+    if config.verbose:
+        click.echo(
+            "Creating list \"{ln}\"."
+            .format(ln=name)
+        )
+
+    items = ["{item}\n".format(item=item) for item in items]
+
+    if avoid_duplicates:
+        try:
+            items = set(items)
+        except TypeError:
+            pass
+
+    try:
+        with open(config.path(name), 'w') as fh:
+            if config.debug:
+                click.echo("Opened file.")
+            fh.writelines(items)
+    except (IOError, OSError):
+        click.echo("Write error.")
+    else:
+        list_items = config.read(name, force=True)
+        if all(item in list_items for item in items):
+            click.echo("Created list.")
