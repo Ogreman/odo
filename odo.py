@@ -142,8 +142,9 @@ def list(config, name):
 
 @cli.command()
 @click.option('--lol', is_flag=True)
+@click.option('--paths', is_flag=True)
 @pass_config
-def lists(config, lol):
+def lists(config, lol, paths):
     if config.verbose:
         click.echo(
             "Listing all lists found at {dir}."
@@ -155,8 +156,8 @@ def lists(config, lol):
             click.echo(
                 "> {name} [{count} items]"
                 .format(
-                    name=name,
-                    count=count
+                    name="{0}".format(config.path(name)) if paths else name,
+                    count=count,
                 )
             )
             if lol:
@@ -229,7 +230,8 @@ def add(config, item, name, avoid_duplicates):
                     click.echo("Duplicate found.")
                 return
         except TypeError:
-            pass
+            if config.verbose:
+                click.echo("Unable to check for duplicates.")
 
     try:
         with open(config.path(name), 'a') as fh:
