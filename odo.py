@@ -15,16 +15,18 @@ class Config(object):
         if list_name is not None:
             if list_name in self._paths:
                 if self.debug:
-                    click.echo(
+                    click.secho(
                         "Using path cache for \"{}\"."
-                        .format(list_name)
+                        .format(list_name),
+                        fg="cyan"
                     )
                 path = self._paths[list_name]
             else:
                 if self.debug:
-                    click.echo(
+                    click.secho(
                         "Setting path cache for \"{}\"."
-                        .format(list_name)
+                        .format(list_name),
+                        fg="cyan"
                     )
                 path = os.path.expanduser(
                     "{dir}{sl}.{name}.odo"
@@ -48,9 +50,10 @@ class Config(object):
             ]
             for name in list_names:
                 if self.debug:
-                    click.echo(
+                    click.secho(
                         "Setting path cache for \"{}\"."
-                        .format(name)
+                        .format(name),
+                        fg="cyan"
                     )
                 self._paths[name] = os.path.expanduser(
                     "{dir}{sl}.{name}.odo"
@@ -71,21 +74,23 @@ class Config(object):
             try:
                 with open(self.path(list_name), 'r') as fh:
                     if self.debug:
-                        click.echo("Opened file.")
+                        click.secho("Opened file.", fg="cyan")
                     self._lists[list_name] = fh.readlines()
                     if self.debug:
-                        click.echo(
+                        click.secho(
                             "Set list cache for \"{}\"."
-                            .format(list_name)
+                            .format(list_name),
+                            fg="cyan"
                         )
             except (IOError, OSError):
                 if self.verbose:
-                    click.echo("Failed to read list.")
+                    click.secho("Failed to read list.", fg="red")
                 return None
         elif self.debug:
-            click.echo(
+            click.secho(
                 "Using list cache for \"{}\"."
-                .format(list_name)
+                .format(list_name),
+                fg="cyan"
             )
         return self._lists[list_name]
 
@@ -122,8 +127,9 @@ def cli(config, verbose, debug, list_dir):
 
 @cli.command()
 @click.argument('name', default='default')
+@click.option('--positions', is_flag=True)
 @pass_config
-def list(config, name):
+def list(config, name, positions):
     if config.verbose:
         click.echo(
             "Listing items from \"{ln}\"."
@@ -138,8 +144,12 @@ def list(config, name):
     if items is not None:
         if not items:
             click.echo("List empty.")
-        for item in items:
-            click.echo(">> {0}".format(item.rstrip()))
+        if positions:
+            for p, item in enumerate(items):
+                click.echo("{0}: {1}".format(p, item.rstrip()))
+        else:
+            for item in items:
+                click.echo(">> {0}".format(item.rstrip()))
         if config.verbose:
             click.echo("Done.")
 
@@ -147,8 +157,9 @@ def list(config, name):
 @cli.command()
 @click.option('--lol', is_flag=True)
 @click.option('--paths', is_flag=True)
+@click.option('--positions', is_flag=True)
 @pass_config
-def lists(config, lol, paths):
+def lists(config, lol, paths, positions):
     if config.verbose:
         click.echo(
             "Listing all lists found at {dir}."
@@ -170,8 +181,12 @@ def lists(config, lol, paths):
                         "Listing items from \"{ln}\"."
                         .format(ln=name)
                     )
-                for item in config.read(name):
-                    click.echo(">> {0}".format(item.rstrip()))
+                if positions:
+                    for p, item in enumerate(config.read(name)):
+                        click.echo("{0}: {1}".format(p, item.rstrip()))
+                else:
+                    for item in config.read(name):
+                        click.echo(">> {0}".format(item.rstrip()))
         if config.verbose:
             click.echo("Done.")
 
@@ -199,16 +214,16 @@ def clear(config, name, delete, all_lists):
             try:
                 os.remove(config.path(name))
             except OSError:
-                click.echo("Failed to delete list.")
+                click.secho("Failed to delete list.", fg="red")
             else:
-                click.echo("Removed file.")
+                click.secho("Removed file.", fg="green")
         else:
             try:
                 with open(config.path(name), 'w') as fh:
                     pass
-                click.echo("Cleared file.")
+                click.secho("Cleared file.", fg="green")
             except (IOError, OSError):
-                click.echo("Failed to clear list.")
+                click.secho("Failed to clear list.", fg="red")
 
     if config.verbose:
         click.echo("Done.")
@@ -245,13 +260,13 @@ def add(config, item, name, avoid_duplicates):
     try:
         with open(config.path(name), 'a') as fh:
             if config.debug:
-                click.echo("Opened file.")
+                click.secho("Opened file.", fg="cyan")
             fh.write(string)
     except (IOError, OSError):
-        click.echo("Write error.")
+        click.secho("Write error.", fg="red")
     else:
         if string in config.read(name, force=True):
-            click.echo("Added.")
+            click.secho("Added.", fg="green")
 
 
 @cli.command()
@@ -278,22 +293,23 @@ def adds(config, name, items, avoid_duplicates):
     try:
         with open(config.path(name), 'a') as fh:
             if config.debug:
-                click.echo("Opened file.")
+                click.secho("Opened file.", fg="cyan")
             fh.writelines(items)
     except (IOError, OSError):
-        click.echo("Write error.")
+        click.secho("Write error.", fg="red")
     else:
         if all(item in config.read(name, force=True) for item in items):
-            click.echo("Added.")
+            click.secho("Added.", fg="green")
         elif config.debug:
-            click.echo("Partially added.")
+            click.secho("Partially added.", fg="yellow")
 
 
 @cli.command()
 @click.argument('item')
 @click.argument('name', default='default')
+@click.option('--position', is_flag=True)
 @pass_config
-def remove(config, item, name):
+def remove(config, item, name, position):
     if config.verbose:
         click.echo(
             "Removing item \"{item}\" from list \"{ln}\"."
@@ -304,21 +320,76 @@ def remove(config, item, name):
         click.echo("List does not exist.")
         return
 
-    string = "{item}\n".format(item=item)
+    if position:
+        try:
+            string = config.read(name)[int(item)]
+        except ValueError:
+            click.secho(
+                "Item must be integer value if position is provided.",
+                fg="red"
+            )
+            return
+        except IndexError:
+            click.secho(
+                "Item at position \"{}\" not found."
+                .format(item),
+                fg="red"
+            )
+            return
+    else:
+        string = "{item}\n".format(item=item)
+
     if string in config.read(name):
         config.remove(name, string)
         try:
             with open(config.path(name), 'w') as fh:
                 if config.debug:
-                    click.echo("Opened file.")
+                    click.secho("Opened file.", fg="cyan")
                 fh.writelines(config.read(name))
         except (IOError, OSError):
-            click.echo("Write error.")
+            click.secho("Write error.", fg="red")
         else:
             if string not in config.read(name, force=True):
-                click.echo("Removed.")
+                click.secho("Removed.", fg="green")
     elif config.verbose:
         click.echo("Item not in list.")
+
+
+@cli.command()
+@click.argument('name', default='default')
+@pass_config
+def edit(config, name):
+    if config.verbose:
+        click.echo(
+            "Editing list \"{ln}\"."
+            .format(ln=name)
+        )
+
+    contents = config.read(name)
+    header = "# Editing list \"{0}\" - one item per line.\n".format(name)
+    new_contents = click.edit(
+        "{header}{items}".format(
+            header=header,
+            items=''.join(contents) if contents is not None else ''
+        )
+    )
+
+    if new_contents is None:
+        click.secho("No changes.", fg="yellow")
+        return
+    else:
+        try:
+            with open(config.path(name), 'w') as fh:
+                if config.debug:
+                    click.secho("Opened file.", fg="cyan")
+                try:
+                    fh.write(new_contents.split(header)[1])
+                except IndexError:
+                    pass
+        except (IOError, OSError):
+            click.secho("Write error.", fg="red")
+        else:
+            click.secho("Updated.", fg="green")
 
 
 @cli.command()
@@ -349,15 +420,15 @@ def create(config, name, items, avoid_duplicates, overwrite):
     try:
         with open(config.path(name), 'w') as fh:
             if config.debug:
-                click.echo("Opened file.")
+                click.secho("Opened file.", fg="cyan")
             fh.writelines(items)
     except (IOError, OSError):
-        click.echo("Write error.")
+        click.secho("Write error.", fg="red")
     else:
         if all(item in config.read(name, force=True) for item in items):
-            click.echo("Created list.")
+            click.secho("Created list.", fg="green")
         elif config.debug:
-            click.echo("Partially created list.")
+            click.secho("Partially created list.", fg="yellow")
 
 
 @cli.command()
