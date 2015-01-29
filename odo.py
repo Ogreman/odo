@@ -101,6 +101,10 @@ class Config(object):
                 if item != item_name
             ]
 
+    def rename_list(self, list_name, list_new_name):
+        if list_name in self._lists:
+            self._lists[list_new_name] = self._lists.pop(list_name)
+
 
 pass_config = click.make_pass_decorator(Config, ensure=True)
 
@@ -175,32 +179,37 @@ def lists(config, lol, paths):
 @cli.command()
 @click.argument('name', default='default')
 @click.option('--delete', is_flag=True)
+@click.option('--all-lists', is_flag=True)
 @pass_config
-def clear(config, name, delete):
-    if config.verbose:
-        click.echo(
-            "Clearing items from \"{}\"."
-            .format(name)
-        )
+def clear(config, name, delete, all_lists):
 
-    if not os.path.exists(config.path(name)):
-        click.echo("List does not exist.")
-        return
+    for name in config.find_lists() if all_lists else [name]:
 
-    if delete:
-        try:
-            os.remove(config.path(name))
-        except OSError:
-            click.echo("Failed to delete list.")
+        if config.verbose:
+            click.echo(
+                "Clearing items from \"{}\"."
+                .format(name)
+            )
+
+        if not os.path.exists(config.path(name)):
+            click.echo("List does not exist.")
+            continue
+
+        if delete:
+            try:
+                os.remove(config.path(name))
+            except OSError:
+                click.echo("Failed to delete list.")
+            else:
+                click.echo("Removed file.")
         else:
-            click.echo("Removed file.")
-    else:
-        try:
-            with open(config.path(name), 'w') as fh:
-                pass
-            click.echo("Cleared file.")
-        except (IOError, OSError):
-            click.echo("Failed to clear list.")
+            try:
+                with open(config.path(name), 'w') as fh:
+                    pass
+                click.echo("Cleared file.")
+            except (IOError, OSError):
+                click.echo("Failed to clear list.")
+
     if config.verbose:
         click.echo("Done.")
 
@@ -246,6 +255,41 @@ def add(config, item, name, avoid_duplicates):
 
 
 @cli.command()
+@click.argument('name')
+@click.argument('items', nargs=-1)
+@click.option('--avoid-duplicates', is_flag=True)
+@pass_config
+def adds(config, name, items, avoid_duplicates):
+    if config.verbose:
+        click.echo(
+            "Adding to list \"{ln}\"."
+            .format(ln=name)
+        )
+
+    items = ["{item}\n".format(item=item) for item in items]
+
+    if avoid_duplicates:
+        try:
+            items = set(items) - set(config.read(name))
+        except TypeError:
+            if config.verbose:
+                click.echo("Unable to check for duplicates.")
+
+    try:
+        with open(config.path(name), 'a') as fh:
+            if config.debug:
+                click.echo("Opened file.")
+            fh.writelines(items)
+    except (IOError, OSError):
+        click.echo("Write error.")
+    else:
+        if all(item in config.read(name, force=True) for item in items):
+            click.echo("Added.")
+        elif config.debug:
+            click.echo("Partially added.")
+
+
+@cli.command()
 @click.argument('item')
 @click.argument('name', default='default')
 @pass_config
@@ -255,6 +299,10 @@ def remove(config, item, name):
             "Removing item \"{item}\" from list \"{ln}\"."
             .format(item=item, ln=name)
         )
+
+    if not os.path.exists(config.path(name)):
+        click.echo("List does not exist.")
+        return
 
     string = "{item}\n".format(item=item)
     if string in config.read(name):
@@ -277,13 +325,18 @@ def remove(config, item, name):
 @click.argument('name')
 @click.argument('items', nargs=-1)
 @click.option('--avoid-duplicates', is_flag=True)
+@click.option('--overwrite/--no-overwrite', default=True)
 @pass_config
-def create(config, name, items, avoid_duplicates):
+def create(config, name, items, avoid_duplicates, overwrite):
     if config.verbose:
         click.echo(
             "Creating list \"{ln}\"."
             .format(ln=name)
         )
+
+    if os.path.exists(config.path(name)) and not overwrite:
+        click.echo("List already exists.")
+        return
 
     items = ["{item}\n".format(item=item) for item in items]
 
@@ -301,6 +354,26 @@ def create(config, name, items, avoid_duplicates):
     except (IOError, OSError):
         click.echo("Write error.")
     else:
-        list_items = config.read(name, force=True)
-        if all(item in list_items for item in items):
+        if all(item in config.read(name, force=True) for item in items):
             click.echo("Created list.")
+        elif config.debug:
+            click.echo("Partially created list.")
+
+
+@cli.command()
+@click.argument('name')
+@click.argument('new-name')
+@pass_config
+def rename(config, name, new_name):
+    if config.verbose:
+        click.echo(
+            "Renaming list \"{0}\" to \"{1}\"."
+            .format(name, new_name)
+        )
+
+    try:
+        os.rename(config.path(name), config.path(new_name))
+    except OSError:
+        click.echo("List does not exist.")
+    else:
+        click.echo("Renamed list.")
