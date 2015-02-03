@@ -357,8 +357,9 @@ def remove(config, item, name, position):
 
 @cli.command()
 @click.argument('name', default='default')
+@click.argument('editor', default='/usr/bin/nano')
 @pass_config
-def edit(config, name):
+def edit(config, name, editor):
     if config.verbose:
         click.echo(
             "Editing list \"{ln}\"."
@@ -371,7 +372,8 @@ def edit(config, name):
         "{header}{items}".format(
             header=header,
             items=''.join(contents) if contents is not None else ''
-        )
+        ),
+        editor=editor
     )
 
     if new_contents is None:
