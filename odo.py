@@ -2,14 +2,106 @@ import os
 import click
 
 
+def to_bool(value):
+    return {'true': True, 'false': False}[value.lower()]
+specs = __builtins__.copy()
+specs['bool'] = to_bool
+
+
 class Config(object):
 
     def __init__(self):
         self.verbose = False
         self.debug = False
-        self.list_dir = ""
+        self.directory = ""
+        self.default_verbose = False
+        self.default_debug = False
+        self._verbose_spec = "bool"
+        self._debug_spec = "bool"
+        self.default_directory = "~/"
+        self.default_list = "default"
+        self.config = "~/.odoconfig"
         self._paths = {}
         self._lists = {}
+
+    def initialise_defaults(self):
+        try:
+            with open(os.path.expanduser(self.config), 'r') as fh:
+                for l in fh.readlines():
+                    if l.startswith('default'):
+                        name, value, spec = l.split('=')
+                        try:
+                            setattr(
+                                self,
+                                name, 
+                                specs.get(spec.strip(), str)(value)
+                            )
+                            if self.debug:
+                                click.secho(
+                                    'Set {0} to {1}.'
+                                    .format(name, value), 
+                                    fg="cyan"
+                                )
+                        except TypeError:
+                            if self.debug:
+                                click.secho(
+                                    'Unable to convert {0} to {1}.'
+                                    .format(name, spec),
+                                    fg="red"
+                                )
+                            continue
+        except (IOError, OSError):
+            if self.debug:
+                click.secho('Config file does not yet exist.', fg="red")
+
+    @staticmethod
+    def spec_name(name):
+        return name.split('default')[1] + '_spec'
+
+    def reset_defaults(self):
+        try:    
+            with open(os.path.expanduser(self.config), 'w') as fh:
+                pass
+        except (IOError, OSError):
+            if self.debug:
+                click.secho('Error writing to config file.', fg="red")
+
+    def set_default(self, name, value, spec=None):
+        if name.startswith('default'):
+            setattr(self, name, value)
+            if self.debug:
+                click.secho(
+                    'Set {0} to {1}.'
+                    .format(name, value), 
+                    fg="cyan"
+                )
+            if spec is not None:
+                setattr(self, self.spec_name(name), spec)
+                if self.debug:
+                    click.secho(
+                        'Set {0} to {1}.'
+                        .format(name, value), 
+                        fg="cyan"
+                    )
+        try:
+            with open(os.path.expanduser(self.config), 'w') as fh:
+                for default in dir(self):
+                    if default.startswith('default'):
+                        default_string = "{d}={v}={s}\n".format(
+                            d=default, 
+                            v=getattr(self, default),
+                            s=getattr(self, self.spec_name(default), "str")
+                        )
+                        fh.write(default_string)
+                        if self.debug:
+                            click.secho(
+                                'Wrote {0} to file.'
+                                .format(default_string.strip()),
+                                fg="cyan"
+                            )
+        except (IOError, OSError):
+            if self.debug:
+                click.secho('Error writing to config file.', fg="red")
 
     def path(self, list_name=None):
         if list_name is not None:
@@ -31,15 +123,15 @@ class Config(object):
                 path = os.path.expanduser(
                     "{dir}{sl}.{name}.odo"
                     .format(
-                        dir=self.list_dir,
+                        dir=self.directory,
                         name=list_name,
-                        sl="" if self.list_dir.endswith('/') else "/",
+                        sl="" if self.directory.endswith('/') else "/",
                     )
                 )
                 self._paths[list_name] = path
             return path
         else:
-            return os.path.expanduser(self.list_dir)
+            return os.path.expanduser(self.directory)
 
     def find_lists(self):
         try:
@@ -58,9 +150,9 @@ class Config(object):
                 self._paths[name] = os.path.expanduser(
                     "{dir}{sl}.{name}.odo"
                     .format(
-                        dir=self.list_dir,
+                        dir=self.directory,
                         name=name,
-                        sl="" if self.list_dir.endswith('/') else "/",
+                        sl="" if self.directory.endswith('/') else "/",
                     )
                 )
             return list_names
@@ -117,19 +209,67 @@ pass_config = click.make_pass_decorator(Config, ensure=True)
 @click.group()
 @click.option('--verbose', is_flag=True)
 @click.option('--debug', is_flag=True)
-@click.option('--list-dir', default='~/', help="This is the directory of lists.")
+@click.option('--list-dir', default=None, help="This is the directory of lists.")
 @pass_config
 def cli(config, verbose, debug, list_dir):
-    config.verbose = verbose
-    config.debug = debug
-    config.list_dir = list_dir
+    config.initialise_defaults()
+    if verbose or config.default_verbose:
+        click.echo('Defaults initialised.')
+    
+    config.verbose = verbose | bool(config.default_verbose)
+    config.debug = debug | bool(config.default_debug)    
+    config.directory = list_dir or config.default_directory
+
+    if debug or config.default_debug:
+        click.secho(
+            'Verbose set to {0}.'
+            .format(config.verbose), 
+            fg="cyan"
+        )
+        click.secho(
+            'Debug set to {0}.'
+            .format(config.debug), 
+            fg="cyan"
+        )
+        click.secho(
+            'Directory set to {0}.'
+            .format(config.directory), 
+            fg="cyan"
+        )
+    
+
+@cli.command()
+@click.argument('name')
+@click.argument('value')
+@click.argument('spec', default="")
+@pass_config
+def set(config, name, value, spec):
+    config.set_default('default_{0}'.format(name), value, spec or None)
 
 
 @cli.command()
-@click.argument('name', default='default')
+@pass_config
+def reset(config):
+    config.reset_defaults()
+
+
+@cli.command()
+@pass_config
+def defaults(config):
+    for default in dir(config):
+        if default.startswith('default'):
+            click.echo('{0}: {1}'.format(
+                default,
+                getattr(config, default)
+            ))
+
+
+@cli.command()
+@click.argument('name', default='')
 @click.option('--positions', is_flag=True)
 @pass_config
 def list(config, name, positions):
+    name = name or config.default_list
     if config.verbose:
         click.echo(
             "Listing items from \"{ln}\"."
@@ -192,12 +332,12 @@ def lists(config, lol, paths, positions):
 
 
 @cli.command()
-@click.argument('name', default='default')
+@click.argument('name', default='')
 @click.option('--delete', is_flag=True)
 @click.option('--all-lists', is_flag=True)
 @pass_config
 def clear(config, name, delete, all_lists):
-
+    name = name or config.default_list
     for name in config.find_lists() if all_lists else [name]:
 
         if config.verbose:
@@ -232,13 +372,14 @@ def clear(config, name, delete, all_lists):
 
 @cli.command()
 @click.argument('item')
-@click.argument('name', default='default')
+@click.argument('name', default='')
 @click.option('--avoid-duplicates', is_flag=True)
 @pass_config
 def add(config, item, name, avoid_duplicates):
     """
     This script adds a todo item to a list.
     """
+    name = name or config.default_list
     if config.verbose:
         click.echo(
             "Adding item \"{item}\" to list \"{ln}\"."
@@ -306,10 +447,11 @@ def adds(config, name, items, avoid_duplicates):
 
 @cli.command()
 @click.argument('item')
-@click.argument('name', default='default')
+@click.argument('name', default='')
 @click.option('--position', is_flag=True)
 @pass_config
 def remove(config, item, name, position):
+    name = name or config.default_list
     if config.verbose:
         click.echo(
             "Removing item \"{item}\" from list \"{ln}\"."
@@ -356,10 +498,11 @@ def remove(config, item, name, position):
 
 
 @cli.command()
-@click.argument('name', default='default')
+@click.argument('name', default='')
 @click.argument('editor', default='/usr/bin/nano')
 @pass_config
 def edit(config, name, editor):
+    name = name or config.default_list
     if config.verbose:
         click.echo(
             "Editing list \"{ln}\"."
