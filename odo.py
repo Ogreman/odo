@@ -21,6 +21,7 @@ class Config(object):
         self.default_directory = "~/"
         self.default_list = "default"
         self.config = "~/.odoconfig"
+        self.default_positions = False
         self._paths = {}
         self._lists = {}
 
@@ -284,7 +285,7 @@ def list(config, name, positions):
     if items is not None:
         if not items:
             click.echo("List empty.")
-        if positions:
+        if positions or config.default_positions:
             for p, item in enumerate(items):
                 click.echo("{0}: {1}".format(p, item.rstrip()))
         else:
@@ -321,7 +322,7 @@ def lists(config, lol, paths, positions):
                         "Listing items from \"{ln}\"."
                         .format(ln=name)
                     )
-                if positions:
+                if positions or config.default_positions:
                     for p, item in enumerate(config.read(name)):
                         click.echo("{0}: {1}".format(p, item.rstrip()))
                 else:
@@ -367,7 +368,6 @@ def clear(config, name, delete, all_lists):
 
     if config.verbose:
         click.echo("Done.")
-
 
 
 @cli.command()
@@ -462,7 +462,7 @@ def remove(config, item, name, position):
         click.echo("List does not exist.")
         return
 
-    if position:
+    if position or config.default_positions:
         try:
             string = config.read(name)[int(item)]
         except ValueError:
@@ -570,7 +570,8 @@ def create(config, name, items, avoid_duplicates, overwrite):
     except (IOError, OSError):
         click.secho("Write error.", fg="red")
     else:
-        if all(item in config.read(name, force=True) for item in items):
+        read_items = config.read(name, force=True)
+        if all(item in read_items for item in items):
             click.secho("Created list.", fg="green")
         elif config.debug:
             click.secho("Partially created list.", fg="yellow")
